@@ -788,6 +788,19 @@ internal unsafe class VkCommandList : CommandList
         CopyBuffer(stagingBuffer, 0, buffer, bufferOffsetInBytes, sizeInBytes);
     }
 
+    private protected override void PushConstantsCore(uint offsetInBytes, IntPtr source, uint sizeInBytes)
+    {
+        EnsureRenderPassActive();
+
+        _gd.Vk.CmdPushConstants(
+            _cb,
+            _currentGraphicsPipeline.PipelineLayout,
+            ShaderStageFlags.AllGraphics,
+            offsetInBytes,
+            sizeInBytes,
+            source.ToPointer());
+    }
+
     private protected override void CopyBufferCore(
         DeviceBuffer source,
         uint sourceOffset,
@@ -1049,7 +1062,7 @@ internal unsafe class VkCommandList : CommandList
             uint depthPitch = FormatHelpers.GetDepthPitch(rowPitch, bufferImageHeight, dstVkTexture.Format);
 
             var layers = stackalloc BufferImageCopy[(int)layerCount];
-            for(uint layer = 0; layer < layerCount; layer++)
+            for (uint layer = 0; layer < layerCount; layer++)
             {
                 SubresourceLayout dstLayout = dstVkTexture.GetSubresourceLayout(
                     dstVkTexture.CalculateSubresource(dstMipLevel, dstBaseArrayLayer + layer));

@@ -873,77 +873,77 @@ internal unsafe class OpenGLCommandExecutor
             switch (kind)
             {
                 case ResourceKind.UniformBuffer:
-                {
-                    if (!isNew) { continue; }
-
-                    DeviceBufferRange range = Util.GetBufferRange(resource, bufferOffset);
-                    OpenGLBuffer glUB = Util.AssertSubtype<DeviceBuffer, OpenGLBuffer>(range.Buffer);
-
-                    glUB.EnsureResourcesCreated();
-                    if (pipeline.GetUniformBindingForSlot(slot, element, out OpenGLUniformBinding uniformBindingInfo))
                     {
-                        if (range.SizeInBytes < uniformBindingInfo.BlockSize)
+                        if (!isNew) { continue; }
+
+                        DeviceBufferRange range = Util.GetBufferRange(resource, bufferOffset);
+                        OpenGLBuffer glUB = Util.AssertSubtype<DeviceBuffer, OpenGLBuffer>(range.Buffer);
+
+                        glUB.EnsureResourcesCreated();
+                        if (pipeline.GetUniformBindingForSlot(slot, element, out OpenGLUniformBinding uniformBindingInfo))
                         {
-                            string name = glResourceSet.Layout.Elements[element].Name;
-                            throw new NeoVeldridException(
-                                $"Not enough data in uniform buffer \"{name}\" (slot {slot}, element {element}). Shader expects at least {uniformBindingInfo.BlockSize} bytes, but buffer only contains {range.SizeInBytes} bytes");
+                            if (range.SizeInBytes < uniformBindingInfo.BlockSize)
+                            {
+                                string name = glResourceSet.Layout.Elements[element].Name;
+                                throw new NeoVeldridException(
+                                    $"Not enough data in uniform buffer \"{name}\" (slot {slot}, element {element}). Shader expects at least {uniformBindingInfo.BlockSize} bytes, but buffer only contains {range.SizeInBytes} bytes");
+                            }
+                            _gl.UniformBlockBinding(pipeline.Program, uniformBindingInfo.BlockLocation, ubBaseIndex + ubOffset);
+                            CheckLastError();
+
+                            _gl.BindBufferRange(
+                                BufferTargetARB.UniformBuffer,
+                                ubBaseIndex + ubOffset,
+                                glUB.Buffer,
+                                (IntPtr)range.Offset,
+                                (UIntPtr)range.SizeInBytes);
+                            CheckLastError();
+
+                            ubOffset += 1;
                         }
-                        _gl.UniformBlockBinding(pipeline.Program, uniformBindingInfo.BlockLocation, ubBaseIndex + ubOffset);
-                        CheckLastError();
-
-                        _gl.BindBufferRange(
-                            BufferTargetARB.UniformBuffer,
-                            ubBaseIndex + ubOffset,
-                            glUB.Buffer,
-                            (IntPtr)range.Offset,
-                            (UIntPtr)range.SizeInBytes);
-                        CheckLastError();
-
-                        ubOffset += 1;
+                        break;
                     }
-                    break;
-                }
                 case ResourceKind.StructuredBufferReadWrite:
                 case ResourceKind.StructuredBufferReadOnly:
-                {
-                    if (!isNew) { continue; }
-
-                    DeviceBufferRange range = Util.GetBufferRange(resource, bufferOffset);
-                    OpenGLBuffer glBuffer = Util.AssertSubtype<DeviceBuffer, OpenGLBuffer>(range.Buffer);
-
-                    glBuffer.EnsureResourcesCreated();
-                    if (pipeline.GetStorageBufferBindingForSlot(slot, element, out OpenGLShaderStorageBinding shaderStorageBinding))
                     {
-                        if (_backend == GraphicsBackend.OpenGL)
-                        {
-                            _gl.ShaderStorageBlockBinding(
-                                pipeline.Program,
-                                shaderStorageBinding.StorageBlockBinding,
-                                ssboBaseIndex + ssboOffset);
-                            CheckLastError();
+                        if (!isNew) { continue; }
 
-                            _gl.BindBufferRange(
-                                BufferTargetARB.ShaderStorageBuffer,
-                                ssboBaseIndex + ssboOffset,
-                                glBuffer.Buffer,
-                                (IntPtr)range.Offset,
-                                (UIntPtr)range.SizeInBytes);
-                            CheckLastError();
-                        }
-                        else
+                        DeviceBufferRange range = Util.GetBufferRange(resource, bufferOffset);
+                        OpenGLBuffer glBuffer = Util.AssertSubtype<DeviceBuffer, OpenGLBuffer>(range.Buffer);
+
+                        glBuffer.EnsureResourcesCreated();
+                        if (pipeline.GetStorageBufferBindingForSlot(slot, element, out OpenGLShaderStorageBinding shaderStorageBinding))
                         {
-                            _gl.BindBufferRange(
-                                BufferTargetARB.ShaderStorageBuffer,
-                                shaderStorageBinding.StorageBlockBinding,
-                                glBuffer.Buffer,
-                                (IntPtr)range.Offset,
-                                (UIntPtr)range.SizeInBytes);
-                            CheckLastError();
+                            if (_backend == GraphicsBackend.OpenGL)
+                            {
+                                _gl.ShaderStorageBlockBinding(
+                                    pipeline.Program,
+                                    shaderStorageBinding.StorageBlockBinding,
+                                    ssboBaseIndex + ssboOffset);
+                                CheckLastError();
+
+                                _gl.BindBufferRange(
+                                    BufferTargetARB.ShaderStorageBuffer,
+                                    ssboBaseIndex + ssboOffset,
+                                    glBuffer.Buffer,
+                                    (IntPtr)range.Offset,
+                                    (UIntPtr)range.SizeInBytes);
+                                CheckLastError();
+                            }
+                            else
+                            {
+                                _gl.BindBufferRange(
+                                    BufferTargetARB.ShaderStorageBuffer,
+                                    shaderStorageBinding.StorageBlockBinding,
+                                    glBuffer.Buffer,
+                                    (IntPtr)range.Offset,
+                                    (UIntPtr)range.SizeInBytes);
+                                CheckLastError();
+                            }
+                            ssboOffset += 1;
                         }
-                        ssboOffset += 1;
+                        break;
                     }
-                    break;
-                }
                 case ResourceKind.TextureReadOnly:
                     TextureView texView = Util.GetTextureView(_gd, resource);
                     OpenGLTextureView glTexView = Util.AssertSubtype<TextureView, OpenGLTextureView>(texView);
@@ -1119,6 +1119,7 @@ internal unsafe class OpenGLCommandExecutor
             float bottom = _fb.Height - (viewport.Y + viewport.Height);
 
             _gl.ViewportIndexed(index, left, bottom, viewport.Width, viewport.Height);
+
             CheckLastError();
 
             _gl.DepthRangeIndexed(index, viewport.MinDepth, viewport.MaxDepth);
@@ -1163,6 +1164,49 @@ internal unsafe class OpenGLCommandExecutor
                 dataPtr.ToPointer());
             CheckLastError();
         }
+    }
+
+    public void PushConstants(uint offsetInBytes, IntPtr dataPtr, uint sizeInBytes)
+    {
+        OpenGLPipeline pipeline = _graphicsPipelineActive ? _graphicsPipeline : _computePipeline;
+        if (pipeline == null) { return; }
+
+        pipeline.EnsureResourcesCreated();
+
+        if (!pipeline.HasPushConstantBuffer)
+        {
+            return;
+        }
+
+        // PushConstantGLBuffer is a raw uint GL handle, not an OpenGLBuffer wrapper
+        uint glBuffer = pipeline.PushConstantGLBuffer;
+
+        if (_extensions.ARB_DirectStateAccess)
+        {
+            _gl.NamedBufferSubData(
+                glBuffer,
+                (IntPtr)offsetInBytes,
+                sizeInBytes,
+                dataPtr.ToPointer());
+            CheckLastError();
+        }
+        else
+        {
+            _gl.BindBuffer(BufferTargetARB.UniformBuffer, glBuffer);
+            CheckLastError();
+            _gl.BufferSubData(
+                BufferTargetARB.UniformBuffer,
+                (IntPtr)offsetInBytes,
+                (UIntPtr)sizeInBytes,
+                dataPtr.ToPointer());
+            CheckLastError();
+        }
+
+        // PushConstantBindingSlot is the public property name, not PushConstantBindingPoint
+        _gl.UniformBlockBinding(pipeline.Program, pipeline.PushConstantBlockIndex, pipeline.PushConstantBindingSlot);
+        CheckLastError();
+        _gl.BindBufferBase(BufferTargetARB.UniformBuffer, pipeline.PushConstantBindingSlot, glBuffer);
+        CheckLastError();
     }
 
     public void UpdateTexture(

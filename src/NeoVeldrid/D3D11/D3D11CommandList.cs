@@ -87,6 +87,10 @@ internal unsafe class D3D11CommandList : CommandList
 
     private readonly List<D3D11Swapchain> _referencedSwapchains = new List<D3D11Swapchain>();
 
+    private ComPtr<ID3D11Buffer> _pushConstantBuffer;
+    private const uint PushConstantBufferSize = 128; // Must be multiple of 16 in D3D11
+    private const uint PushConstantSlot = 13;        // Reserved CB slot
+
     /// <summary>
     /// Helper to get the raw context pointer for calling D3D11 methods.
     /// </summary>
@@ -121,6 +125,18 @@ internal unsafe class D3D11CommandList : CommandList
             _uda = default;
             _uda.Handle = pUda;
         }
+
+        BufferDesc pcBufferDesc = new BufferDesc
+        {
+            ByteWidth = PushConstantBufferSize,
+            Usage = Usage.Dynamic,
+            BindFlags = (uint)BindFlag.ConstantBuffer,
+            CPUAccessFlags = (uint)CpuAccessFlag.Write,
+        };
+        ID3D11Buffer* pPcBuffer;
+        SilkMarshal.ThrowHResult(gd.Device->CreateBuffer(&pcBufferDesc, null, &pPcBuffer));
+        _pushConstantBuffer = default;
+        _pushConstantBuffer.Handle = pPcBuffer;
     }
 
     public ID3D11CommandList* DeviceCommandList => _commandList;
@@ -140,6 +156,35 @@ internal unsafe class D3D11CommandList : CommandList
         }
         ClearState();
         _begun = true;
+    }
+
+    private protected override void PushConstantsCore(uint offsetInBytes, IntPtr source, uint sizeInBytes)
+    {
+        // D3D11 has no native push constants — emulate with a Map/Discard on a
+        // dedicated constant buffer bound to a reserved slot on all shader stages.
+        MappedSubresource mapped;
+        SilkMarshal.ThrowHResult(
+            Ctx->Map(
+                (ID3D11Resource*)_pushConstantBuffer.Handle,
+                0,
+                Map.WriteDiscard,
+                0,
+                &mapped));
+
+        Unsafe.CopyBlock(
+            (byte*)mapped.PData + offsetInBytes,
+            source.ToPointer(),
+            sizeInBytes);
+
+        Ctx->Unmap((ID3D11Resource*)_pushConstantBuffer.Handle, 0);
+
+        // Bind to all relevant shader stages at the reserved slot
+        ID3D11Buffer* cb = _pushConstantBuffer.Handle;
+        Ctx->VSSetConstantBuffers(PushConstantSlot, 1, &cb);
+        Ctx->PSSetConstantBuffers(PushConstantSlot, 1, &cb);
+        Ctx->GSSetConstantBuffers(PushConstantSlot, 1, &cb);
+        Ctx->HSSetConstantBuffers(PushConstantSlot, 1, &cb);
+        Ctx->DSSetConstantBuffers(PushConstantSlot, 1, &cb);
     }
 
     private void ClearState()
@@ -1253,7 +1298,7 @@ internal unsafe class D3D11CommandList : CommandList
                 Ctx->PSSetSamplers((uint)slot, 1, &samplerPtr);
             }
         }
-        if((stages & ShaderStages.Compute) == ShaderStages.Compute)
+        if ((stages & ShaderStages.Compute) == ShaderStages.Compute)
         {
             Ctx->CSSetSamplers((uint)slot, 1, &samplerPtr);
         }
@@ -1545,6 +1590,7 @@ internal unsafe class D3D11CommandList : CommandList
             if (_uda.Handle != null) _uda.Dispose();
             if (_commandList.Handle != null) _commandList.Dispose();
             if (_context1.Handle != null) _context1.Dispose();
+            if (_pushConstantBuffer.Handle != null) _pushConstantBuffer.Dispose();
             _context.Dispose();
 
             foreach (BoundResourceSetInfo boundGraphicsSet in _graphicsResourceSets)

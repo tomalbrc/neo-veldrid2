@@ -27,6 +27,8 @@ internal interface OpenGLCommandEntryList
     void ExecuteAll(OpenGLCommandExecutor executor);
     void DispatchIndirect(DeviceBuffer indirectBuffer, uint offset);
     void CopyBuffer(DeviceBuffer source, uint sourceOffset, DeviceBuffer destination, uint destinationOffset, uint sizeInBytes);
+    void PushConstants(uint offsetInBytes, IntPtr source, uint sizeInBytes);
+
     void CopyTexture(
         Texture source,
         uint srcX, uint srcY, uint srcZ,

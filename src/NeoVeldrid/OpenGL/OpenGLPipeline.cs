@@ -40,6 +40,18 @@ internal unsafe class OpenGLPipeline : Pipeline, OpenGLDeferredResource
 
     public uint Program => _program;
 
+    private const string PushConstantBlockName = "_PushConstants";
+    private const uint PushConstantBindingPoint = 15; // Reserved slot, away from regular UBOs
+    private const uint PushConstantBufferSize = 128;  // Max push constant size in bytes
+
+    private uint _pushConstantBuffer;
+    private uint _pushConstantBlockIndex = GL_INVALID_INDEX;
+
+    public bool HasPushConstantBuffer => _pushConstantBlockIndex != GL_INVALID_INDEX;
+    public uint PushConstantBlockIndex => _pushConstantBlockIndex;
+    public uint PushConstantBindingSlot => PushConstantBindingPoint;
+    public uint PushConstantGLBuffer => _pushConstantBuffer;
+
     public uint GetUniformBufferCount(uint setSlot) => _setInfos[setSlot].UniformBufferCount;
     public uint GetShaderStorageBufferCount(uint setSlot) => _setInfos[setSlot].ShaderStorageBufferCount;
 
@@ -77,6 +89,7 @@ internal unsafe class OpenGLPipeline : Pipeline, OpenGLDeferredResource
         IsComputePipeline = true;
         ComputeShader = description.ComputeShader;
         VertexStrides = Array.Empty<int>();
+
 #if !VALIDATE_USAGE
         ResourceLayouts = Util.ShallowClone(description.ResourceLayouts);
 #endif
@@ -170,6 +183,25 @@ internal unsafe class OpenGLPipeline : Pipeline, OpenGLDeferredResource
     void BindAttribLocation(uint slot, string elementName)
     {
         _gl.BindAttribLocation(_program, slot, elementName);
+        CheckLastError();
+    }
+
+    private void SetupPushConstants()
+    {
+        _pushConstantBlockIndex = _gl.GetUniformBlockIndex(_program, "_PushConstants");
+        CheckLastError();
+
+        if (_pushConstantBlockIndex == GL_INVALID_INDEX) { return; }
+
+        _gl.GenBuffers(1, out _pushConstantBuffer);
+        CheckLastError();
+        _gl.BindBuffer(BufferTargetARB.UniformBuffer, _pushConstantBuffer);
+        CheckLastError();
+        _gl.BufferData(BufferTargetARB.UniformBuffer, PushConstantBufferSize, null, BufferUsageARB.DynamicDraw);
+        CheckLastError();
+        _gl.BindBuffer(BufferTargetARB.UniformBuffer, 0);
+        CheckLastError();
+        _gl.UniformBlockBinding(_program, _pushConstantBlockIndex, PushConstantBindingPoint);
         CheckLastError();
     }
 
@@ -441,6 +473,12 @@ internal unsafe class OpenGLPipeline : Pipeline, OpenGLDeferredResource
             _disposed = true;
             _gl.DeleteProgram(_program);
             CheckLastError();
+
+            if (_pushConstantBuffer != 0)
+            {
+                _gl.DeleteBuffers(1, in _pushConstantBuffer);
+                CheckLastError();
+            }
         }
     }
 }
