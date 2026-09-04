@@ -8,6 +8,8 @@ internal unsafe class VkResourceLayout : ResourceLayout
     private readonly VkGraphicsDevice _gd;
     private readonly DescriptorSetLayout _dsl;
     private readonly DescriptorType[] _descriptorTypes;
+    private readonly uint[] _descriptorCounts;
+
     private bool _disposed;
     private string _name;
 
@@ -15,6 +17,8 @@ internal unsafe class VkResourceLayout : ResourceLayout
     public DescriptorType[] DescriptorTypes => _descriptorTypes;
     public DescriptorResourceCounts DescriptorResourceCounts { get; }
     public new int DynamicBufferCount { get; }
+
+    public uint[] DescriptorCounts => _descriptorCounts;
 
     public override bool IsDisposed => _disposed;
 
@@ -51,6 +55,7 @@ internal unsafe class VkResourceLayout : ResourceLayout
             }
 
             _descriptorTypes[i] = descriptorType;
+            _descriptorCounts[i] = elements[i].DescriptorCount;
 
             switch (descriptorType)
             {
@@ -87,8 +92,23 @@ internal unsafe class VkResourceLayout : ResourceLayout
             storageBufferDynamicCount,
             storageImageCount);
 
+        DescriptorBindingFlags* bindingFlags = stackalloc DescriptorBindingFlags[elements.Length];
+        for (uint i = 0; i < elements.Length; i++)
+        {
+            bindingFlags[i] = DescriptorBindingFlags.PartiallyBoundBit | DescriptorBindingFlags.VariableDescriptorCountBit;
+        }
+
+        DescriptorSetLayoutBindingFlagsCreateInfo layoutFlagsCI = new DescriptorSetLayoutBindingFlagsCreateInfo
+        {
+            SType = StructureType.DescriptorSetLayoutBindingFlagsCreateInfo,
+            BindingCount = (uint)elements.Length,
+            PBindingFlags = bindingFlags
+        };
+
         dslCI.BindingCount = (uint)elements.Length;
         dslCI.PBindings = bindings;
+        dslCI.PNext = &layoutFlagsCI;
+        dslCI.Flags = DescriptorSetLayoutCreateFlags.UpdateAfterBindPoolBit;
 
         Result result = _gd.Vk.CreateDescriptorSetLayout(_gd.Device, in dslCI, null, out _dsl);
         CheckResult(result);

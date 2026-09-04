@@ -24,6 +24,8 @@ public struct ResourceLayoutElementDescription : IEquatable<ResourceLayoutElemen
     /// </summary>
     public ResourceLayoutElementOptions Options;
 
+    public uint DescriptorCount = 1;
+
     /// <summary>
     /// Constructs a new ResourceLayoutElementDescription.
     /// </summary>

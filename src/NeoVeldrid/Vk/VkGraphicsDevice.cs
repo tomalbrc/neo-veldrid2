@@ -782,6 +782,7 @@ internal unsafe class VkGraphicsDevice : GraphicsDevice
         bool hasMemReqs2 = false;
         bool hasDedicatedAllocation = false;
         bool hasDriverProperties = false;
+        bool hasDescriptorIndexing = false;
         IntPtr[] activeExtensions = new IntPtr[props.Length];
         uint activeExtensionCount = 0;
 
@@ -834,6 +835,12 @@ internal unsafe class VkGraphicsDevice : GraphicsDevice
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
                 }
+                else if (extensionName == "VK_EXT_descriptor_indexing")
+                {
+                    activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
+                    requiredInstanceExtensions.Remove(extensionName);
+                    hasDescriptorIndexing = true;
+                }
             }
         }
 
@@ -844,11 +851,18 @@ internal unsafe class VkGraphicsDevice : GraphicsDevice
                 $"The following Vulkan device extensions were not available: {missingList}");
         }
 
+        PhysicalDeviceDescriptorIndexingFeatures indexingFeatures = new PhysicalDeviceDescriptorIndexingFeatures(sType: StructureType.PhysicalDeviceDescriptorIndexingFeatures);
+        indexingFeatures.ShaderStorageBufferArrayNonUniformIndexing = true;
+        indexingFeatures.DescriptorBindingPartiallyBound = true;
+        indexingFeatures.RuntimeDescriptorArray = true;
+
         DeviceCreateInfo deviceCreateInfo = new DeviceCreateInfo(sType: StructureType.DeviceCreateInfo);
         deviceCreateInfo.QueueCreateInfoCount = queueCreateInfosCount;
         deviceCreateInfo.PQueueCreateInfos = queueCreateInfos;
 
         deviceCreateInfo.PEnabledFeatures = &deviceFeatures;
+
+        deviceCreateInfo.PNext = &indexingFeatures;
 
         IntPtr* layerNames = stackalloc IntPtr[2];
         uint layerNameCount = 0;
