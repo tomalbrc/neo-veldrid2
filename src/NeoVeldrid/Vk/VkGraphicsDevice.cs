@@ -777,7 +777,7 @@ internal unsafe class VkGraphicsDevice : GraphicsDevice
 
         ExtensionProperties[] props = GetDeviceExtensionProperties();
 
-        HashSet<string> requiredInstanceExtensions = new HashSet<string>(options.DeviceExtensions ?? Array.Empty<string>());
+        HashSet<string> requiredDeviceExtensions = new HashSet<string>(options.DeviceExtensions ?? Array.Empty<string>());
 
         bool hasMemReqs2 = false;
         bool hasDedicatedAllocation = false;
@@ -794,64 +794,84 @@ internal unsafe class VkGraphicsDevice : GraphicsDevice
                 if (extensionName == "VK_EXT_debug_marker")
                 {
                     activeExtensions[activeExtensionCount++] = CommonStrings.VK_EXT_DEBUG_MARKER_EXTENSION_NAME;
-                    requiredInstanceExtensions.Remove(extensionName);
+                    requiredDeviceExtensions.Remove(extensionName);
                     _debugMarkerEnabled = true;
                 }
                 else if (extensionName == "VK_KHR_swapchain")
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
-                    requiredInstanceExtensions.Remove(extensionName);
+                    requiredDeviceExtensions.Remove(extensionName);
                 }
                 else if (preferStandardClipY && extensionName == "VK_KHR_maintenance1")
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
-                    requiredInstanceExtensions.Remove(extensionName);
+                    requiredDeviceExtensions.Remove(extensionName);
                     _standardClipYDirection = true;
                 }
                 else if (extensionName == "VK_KHR_get_memory_requirements2")
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
-                    requiredInstanceExtensions.Remove(extensionName);
+                    requiredDeviceExtensions.Remove(extensionName);
                     hasMemReqs2 = true;
                 }
                 else if (extensionName == "VK_KHR_dedicated_allocation")
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
-                    requiredInstanceExtensions.Remove(extensionName);
+                    requiredDeviceExtensions.Remove(extensionName);
                     hasDedicatedAllocation = true;
                 }
                 else if (extensionName == "VK_KHR_driver_properties")
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
-                    requiredInstanceExtensions.Remove(extensionName);
+                    requiredDeviceExtensions.Remove(extensionName);
                     hasDriverProperties = true;
                 }
                 else if (extensionName == CommonStrings.VK_KHR_portability_subset)
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
-                    requiredInstanceExtensions.Remove(extensionName);
+                    requiredDeviceExtensions.Remove(extensionName);
                 }
-                else if (requiredInstanceExtensions.Remove(extensionName))
+                else if (requiredDeviceExtensions.Remove(extensionName))
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
                 }
                 else if (extensionName == "VK_EXT_descriptor_indexing")
                 {
                     activeExtensions[activeExtensionCount++] = (IntPtr)properties[property].ExtensionName;
-                    requiredInstanceExtensions.Remove(extensionName);
                     hasDescriptorIndexing = true;
                 }
             }
         }
 
-        if (requiredInstanceExtensions.Count != 0)
+        if (requiredDeviceExtensions.Count != 0)
         {
-            string missingList = string.Join(", ", requiredInstanceExtensions);
+            string missingList = string.Join(", ", requiredDeviceExtensions);
             throw new NeoVeldridException(
                 $"The following Vulkan device extensions were not available: {missingList}");
         }
 
-        PhysicalDeviceDescriptorIndexingFeatures indexingFeatures = new PhysicalDeviceDescriptorIndexingFeatures(sType: StructureType.PhysicalDeviceDescriptorIndexingFeatures);
+        if (!hasDescriptorIndexing)
+            throw new NeoVeldridException("VK_EXT_descriptor_indexing is required but not available.");
+
+        PhysicalDeviceDescriptorIndexingFeatures indexingFeatures = new PhysicalDeviceDescriptorIndexingFeatures
+        {
+            SType = StructureType.PhysicalDeviceDescriptorIndexingFeatures
+        };
+
+        PhysicalDeviceFeatures2 pdFeatures2 = new PhysicalDeviceFeatures2
+        {
+            SType = StructureType.PhysicalDeviceFeatures2,
+            PNext = &indexingFeatures
+        };
+        _vk.GetPhysicalDeviceFeatures2(_physicalDevice, &pdFeatures2);
+
+        if (!indexingFeatures.ShaderStorageBufferArrayNonUniformIndexing)
+            throw new NeoVeldridException("VK_EXT_descriptor_indexing: ShaderStorageBufferArrayNonUniformIndexing not supported.");
+        if (!indexingFeatures.DescriptorBindingPartiallyBound)
+            throw new NeoVeldridException("VK_EXT_descriptor_indexing: DescriptorBindingPartiallyBound not supported.");
+        if (!indexingFeatures.RuntimeDescriptorArray)
+            throw new NeoVeldridException("VK_EXT_descriptor_indexing: RuntimeDescriptorArray not supported.");
+
         indexingFeatures.ShaderStorageBufferArrayNonUniformIndexing = true;
         indexingFeatures.DescriptorBindingPartiallyBound = true;
         indexingFeatures.RuntimeDescriptorArray = true;

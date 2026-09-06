@@ -37,20 +37,27 @@ internal unsafe class VkResourceSet : ResourceSet
         // The number of actual layout bindings (e.g., 2 slots)
         int totalBindings = vkLayout.DescriptorTypes.Length;
 
-        // Total flattened resources (e.g., 1 instance buffer + 4 chunk buffers = 5 descriptors)
-        uint totalDescriptorCount = 0;
+        uint[] actualCounts = ComputeActualCounts(vkLayout, boundResources);
+
+        List<uint> variableCounts = new List<uint>();
         for (int i = 0; i < totalBindings; i++)
         {
-            totalDescriptorCount += vkLayout.DescriptorCounts[i];
+            if ((vkLayout.GetElementOptions(i) & ResourceLayoutElementOptions.VariableDescriptorCount) != 0)
+                variableCounts.Add(actualCounts[i]);
         }
 
         DescriptorSetLayout dsl = vkLayout.DescriptorSetLayout;
         _descriptorCounts = vkLayout.DescriptorResourceCounts;
-        _descriptorAllocationToken = _gd.DescriptorPoolManager.Allocate(_descriptorCounts, dsl, totalDescriptorCount);
+        _descriptorAllocationToken = _gd.DescriptorPoolManager.Allocate(
+            _descriptorCounts, dsl, variableCounts.ToArray());
+
+        uint totalActualDescriptors = 0;
+        for (int i = 0; i < totalBindings; i++)
+            totalActualDescriptors += actualCounts[i];
 
         WriteDescriptorSet* descriptorWrites = stackalloc WriteDescriptorSet[totalBindings];
-        DescriptorBufferInfo* bufferInfos = stackalloc DescriptorBufferInfo[(int)totalDescriptorCount];
-        DescriptorImageInfo* imageInfos = stackalloc DescriptorImageInfo[(int)totalDescriptorCount];
+        DescriptorBufferInfo* bufferInfos = stackalloc DescriptorBufferInfo[(int)totalActualDescriptors];
+        DescriptorImageInfo* imageInfos = stackalloc DescriptorImageInfo[(int)totalActualDescriptors];
 
         int resourceIndex = 0;
         int bufferInfoIndex = 0;
@@ -59,20 +66,19 @@ internal unsafe class VkResourceSet : ResourceSet
         for (int i = 0; i < totalBindings; i++)
         {
             DescriptorType type = vkLayout.DescriptorTypes[i];
-            uint descriptorCount = vkLayout.DescriptorCounts[i];
+            uint count = actualCounts[i]; // actual count, not max
 
             descriptorWrites[i].SType = StructureType.WriteDescriptorSet;
-            descriptorWrites[i].DescriptorCount = descriptorCount;
+            descriptorWrites[i].DescriptorCount = count;
             descriptorWrites[i].DescriptorType = type;
             descriptorWrites[i].DstBinding = (uint)i;
             descriptorWrites[i].DstSet = _descriptorAllocationToken.Set;
 
-            if (descriptorCount == 1)
+            if (count == 1)
             {
                 BindableResource resource = boundResources[resourceIndex++];
 
-                if (type == DescriptorType.UniformBuffer || type == DescriptorType.UniformBufferDynamic
-                    || type == DescriptorType.StorageBuffer || type == DescriptorType.StorageBufferDynamic)
+                if (IsBufferType(type))
                 {
                     DeviceBufferRange range = Util.GetBufferRange(resource, 0);
                     VkBuffer rangedVkBuffer = Util.AssertSubtype<DeviceBuffer, VkBuffer>(range.Buffer);
@@ -114,14 +120,12 @@ internal unsafe class VkResourceSet : ResourceSet
                     _refCounts.Add(sampler.RefCount);
                 }
             }
-            else
+            else // array binding (count > 1)
             {
-                // Descriptor Indexing Array Mapping
-                if (type == DescriptorType.UniformBuffer || type == DescriptorType.UniformBufferDynamic
-                    || type == DescriptorType.StorageBuffer || type == DescriptorType.StorageBufferDynamic)
+                if (IsBufferType(type))
                 {
                     int baseInfoIdx = bufferInfoIndex;
-                    for (int j = 0; j < descriptorCount; j++)
+                    for (int j = 0; j < count; j++)
                     {
                         BindableResource resource = boundResources[resourceIndex++];
                         DeviceBufferRange range = Util.GetBufferRange(resource, 0);
@@ -137,7 +141,7 @@ internal unsafe class VkResourceSet : ResourceSet
                 else if (type == DescriptorType.SampledImage)
                 {
                     int baseInfoIdx = imageInfoIndex;
-                    for (int j = 0; j < descriptorCount; j++)
+                    for (int j = 0; j < count; j++)
                     {
                         BindableResource resource = boundResources[resourceIndex++];
                         TextureView texView = Util.GetTextureView(_gd, resource);
@@ -150,26 +154,54 @@ internal unsafe class VkResourceSet : ResourceSet
                     }
                     descriptorWrites[i].PImageInfo = &imageInfos[baseInfoIdx];
                 }
+                // StorageImage and Sampler arrays are not shown but would follow similar pattern
             }
         }
 
         _gd.Vk.UpdateDescriptorSets(_gd.Device, (uint)totalBindings, descriptorWrites, 0, null);
     }
 
-    public override string Name
+    // Helper to compute actual counts (flattened resources are in binding order)
+    private uint[] ComputeActualCounts(VkResourceLayout layout, BindableResource[] resources)
     {
-        get => _name;
-        set
+        uint[] counts = new uint[layout.DescriptorTypes.Length];
+        int idx = 0;
+        for (int i = 0; i < counts.Length; i++)
         {
-            _name = value;
-            _gd.SetResourceName(this, value);
+            uint max = layout.DescriptorCounts[i];
+            bool isVariable = (layout.GetElementOptions(i) & ResourceLayoutElementOptions.VariableDescriptorCount) != 0;
+
+            if (isVariable)
+            {
+                // We take whatever resources remain up to max
+                uint actual = 0;
+                while (idx + actual < resources.Length && actual < max)
+                {
+                    actual++;
+                }
+                counts[i] = actual;
+                idx += (int)actual;
+            }
+            else
+            {
+                // Must be exactly max
+                counts[i] = max;
+                idx += (int)max;
+            }
         }
+        // If you want to validate that idx == resources.Length, you could assert.
+        return counts;
     }
 
-    public override void Dispose()
-    {
-        RefCount.Decrement();
-    }
+    private bool IsBufferType(DescriptorType type) =>
+        type == DescriptorType.UniformBuffer ||
+        type == DescriptorType.UniformBufferDynamic ||
+        type == DescriptorType.StorageBuffer ||
+        type == DescriptorType.StorageBufferDynamic;
+
+    public override string Name { get => _name; set { _name = value; _gd.SetResourceName(this, value); } }
+
+    public override void Dispose() => RefCount.Decrement();
 
     private void DisposeCore()
     {

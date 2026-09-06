@@ -23,8 +23,10 @@ public struct ResourceLayoutElementDescription : IEquatable<ResourceLayoutElemen
     /// Miscellaneous resource options for this element.
     /// </summary>
     public ResourceLayoutElementOptions Options;
-
-    public uint DescriptorCount = 1;
+    /// <summary>
+    /// 
+    /// </summary>
+    public uint DescriptorCount { get; }
 
     /// <summary>
     /// Constructs a new ResourceLayoutElementDescription.
@@ -32,12 +34,13 @@ public struct ResourceLayoutElementDescription : IEquatable<ResourceLayoutElemen
     /// <param name="name">The name of the element.</param>
     /// <param name="kind">The kind of resource.</param>
     /// <param name="stages">The <see cref="ShaderStages"/> in which this element is used.</param>
-    public ResourceLayoutElementDescription(string name, ResourceKind kind, ShaderStages stages)
+    public ResourceLayoutElementDescription(string name, ResourceKind kind, ShaderStages stages, uint descriptorCount = 1)
     {
         Name = name;
         Kind = kind;
         Stages = stages;
         Options = ResourceLayoutElementOptions.None;
+        DescriptorCount = descriptorCount;
     }
 
     /// <summary>
@@ -51,12 +54,13 @@ public struct ResourceLayoutElementDescription : IEquatable<ResourceLayoutElemen
         string name,
         ResourceKind kind,
         ShaderStages stages,
-        ResourceLayoutElementOptions options)
+        ResourceLayoutElementOptions options, uint descriptorCount = 1)
     {
         Name = name;
         Kind = kind;
         Stages = stages;
         Options = options;
+        DescriptorCount = descriptorCount;
     }
 
     /// <summary>
@@ -66,7 +70,7 @@ public struct ResourceLayoutElementDescription : IEquatable<ResourceLayoutElemen
     /// <returns>True if all elements are equal; false otherwise.</returns>
     public readonly bool Equals(ResourceLayoutElementDescription other)
     {
-        return Name == other.Name && Kind == other.Kind && Stages == other.Stages && Options == other.Options;
+        return Name == other.Name && Kind == other.Kind && Stages == other.Stages && Options == other.Options && DescriptorCount == other.DescriptorCount;
     }
 
     /// <summary>
@@ -97,4 +101,11 @@ public enum ResourceLayoutElementOptions
     /// <see cref="GraphicsDevice.StructuredBufferMinOffsetAlignment"/>.
     /// </summary>
     DynamicBinding = 1 << 0,
+
+    /// <summary>
+    /// Indicates that the number of descriptors bound for this element may be less than 
+    /// <see cref="ResourceLayoutElementDescription.DescriptorCount"/> (variable-length array).
+    /// Requires the <c>VK_EXT_descriptor_indexing</c> extension on Vulkan.
+    /// </summary>
+    VariableDescriptorCount = 1 << 1,
 }

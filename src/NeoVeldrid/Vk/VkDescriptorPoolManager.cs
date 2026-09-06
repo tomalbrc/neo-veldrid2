@@ -17,6 +17,41 @@ internal class VkDescriptorPoolManager
         _pools.Add(CreateNewPool());
     }
 
+    public unsafe DescriptorAllocationToken Allocate(DescriptorResourceCounts counts, DescriptorSetLayout setLayout, uint[] variableCounts)
+    {
+        lock (_lock)
+        {
+            DescriptorPool pool = GetPool(counts);
+            DescriptorSetAllocateInfo dsAI = new DescriptorSetAllocateInfo
+            {
+                SType = StructureType.DescriptorSetAllocateInfo
+            };
+            dsAI.DescriptorSetCount = 1;
+            dsAI.PSetLayouts = &setLayout;
+            dsAI.DescriptorPool = pool;
+
+            if (variableCounts != null && variableCounts.Length > 0)
+            {
+                fixed (uint* pCounts = variableCounts)
+                {
+                    DescriptorSetVariableDescriptorCountAllocateInfo varCountAI =
+                        new DescriptorSetVariableDescriptorCountAllocateInfo
+                        {
+                            SType = StructureType.DescriptorSetVariableDescriptorCountAllocateInfo,
+                            DescriptorSetCount = 1,
+                            PDescriptorCounts = pCounts
+                        };
+                    dsAI.PNext = &varCountAI;
+                }
+            }
+
+            Result result = _gd.Vk.AllocateDescriptorSets(_gd.Device, in dsAI, out DescriptorSet set);
+            VulkanUtil.CheckResult(result);
+
+            return new DescriptorAllocationToken(set, pool);
+        }
+    }
+
     public unsafe DescriptorAllocationToken Allocate(DescriptorResourceCounts counts, DescriptorSetLayout setLayout, uint variableCount)
     {
         lock (_lock)
