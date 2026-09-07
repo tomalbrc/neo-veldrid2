@@ -986,9 +986,9 @@ public abstract class CommandList : DeviceResource, IDisposable
     public void PushConstants(uint offsetInBytes, IntPtr source, uint sizeInBytes)
     {
 #if VALIDATE_USAGE
-        if (_graphicsPipeline == null)
+        if (_graphicsPipeline == null && _computePipeline == null)
         {
-            throw new NeoVeldridException($"A graphics {nameof(Pipeline)} must be active before {nameof(PushConstants)} can be called.");
+            throw new NeoVeldridException($"A {nameof(Pipeline)} must be active before {nameof(PushConstants)} can be called.");
         }
 
         if (sizeInBytes == 0)

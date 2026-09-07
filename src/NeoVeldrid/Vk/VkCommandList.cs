@@ -790,12 +790,28 @@ internal unsafe class VkCommandList : CommandList
 
     private protected override void PushConstantsCore(uint offsetInBytes, IntPtr source, uint sizeInBytes)
     {
-        EnsureRenderPassActive();
+        PipelineLayout layout;
+        ShaderStageFlags stageFlags;
+
+        if (_currentGraphicsPipeline != null)
+        {
+            layout = _currentGraphicsPipeline.PipelineLayout;
+            stageFlags = ShaderStageFlags.AllGraphics;
+        }
+        else if (_currentComputePipeline != null)
+        {
+            layout = _currentComputePipeline.PipelineLayout;
+            stageFlags = ShaderStageFlags.ComputeBit;
+        }
+        else
+        {
+            throw new NeoVeldridException("No pipeline set before PushConstants.");
+        }
 
         _gd.Vk.CmdPushConstants(
             _cb,
-            _currentGraphicsPipeline.PipelineLayout,
-            ShaderStageFlags.AllGraphics,
+            layout,
+            stageFlags,
             offsetInBytes,
             sizeInBytes,
             source.ToPointer());
