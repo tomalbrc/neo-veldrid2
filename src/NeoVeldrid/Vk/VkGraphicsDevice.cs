@@ -36,6 +36,9 @@ internal unsafe class VkGraphicsDevice : GraphicsDevice
     private PhysicalDeviceProperties _physicalDeviceProperties;
     private PhysicalDeviceFeatures _physicalDeviceFeatures;
     private PhysicalDeviceMemoryProperties _physicalDeviceMemProperties;
+
+    internal uint MaxPushConstantsSize => _physicalDeviceProperties.Limits.MaxPushConstantsSize;
+
     private Device _device;
     private uint _graphicsQueueIndex;
     private uint _presentQueueIndex;

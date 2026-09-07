@@ -252,6 +252,15 @@ internal unsafe class VkPipeline : Pipeline
         }
         pipelineLayoutCI.PSetLayouts = dsls;
 
+        PushConstantRange pushRange = new PushConstantRange
+        {
+            StageFlags = ShaderStageFlags.AllGraphics,
+            Offset = 0,
+            Size = _gd.MaxPushConstantsSize
+        };
+        pipelineLayoutCI.PushConstantRangeCount = 1;
+        pipelineLayoutCI.PPushConstantRanges = &pushRange;
+
         _gd.Vk.CreatePipelineLayout(_gd.Device, in pipelineLayoutCI, null, out _pipelineLayout);
         pipelineCI.Layout = _pipelineLayout;
 
@@ -360,6 +369,15 @@ internal unsafe class VkPipeline : Pipeline
             dsls[i] = Util.AssertSubtype<ResourceLayout, VkResourceLayout>(resourceLayouts[i]).DescriptorSetLayout;
         }
         pipelineLayoutCI.PSetLayouts = dsls;
+
+        PushConstantRange pushRange = new PushConstantRange
+        {
+            StageFlags = ShaderStageFlags.ComputeBit,
+            Offset = 0,
+            Size = _gd.MaxPushConstantsSize
+        };
+        pipelineLayoutCI.PushConstantRangeCount = 1;
+        pipelineLayoutCI.PPushConstantRanges = &pushRange;
 
         _gd.Vk.CreatePipelineLayout(_gd.Device, in pipelineLayoutCI, null, out _pipelineLayout);
         pipelineCI.Layout = _pipelineLayout;
